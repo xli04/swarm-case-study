@@ -94,6 +94,16 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: v
 .b .bub[aria-expanded="true"] .more { display: block }
 .sys { align-self: center; font-size: 12.5px; color: var(--muted); text-align: center; max-width: 92% }
 .sys b { color: var(--ink); font-weight: 600 }
+.pr { display: flex; align-items: center; gap: 6px; font-size: 14px; flex-wrap: wrap; min-width: 0 }
+.pr b { font-size: 14.5px } .pr span { color: var(--muted); font-size: 13px } svg.pi { flex: none; width: 18px; height: 18px; display: inline-block }
+.pr.lead b { font-size: 16px }
+.pr.say { flex-wrap: nowrap; align-items: flex-start } .pr.say b { white-space: nowrap; min-width: 4.6em; padding-top: 5px } .pr.say .pi { margin-top: 5px }
+.pr.say .bub { background: var(--chip); border-radius: 12px; border-top-left-radius: 3px; padding: 5px 10px; font-size: 14px; overflow-wrap: anywhere; min-width: 0 }
+.tree { border-left: 2px solid var(--ink); margin-left: 8px; padding-left: 0; display: flex; flex-direction: column; gap: 12px }
+.node { position: relative; padding-left: 22px; display: flex; flex-direction: column; gap: 5px; min-width: 0 }
+.node::before { content: ""; position: absolute; left: 0; top: 9px; width: 16px; border-top: 2px solid var(--ink) }
+.bub.say { background: var(--div-soft); border-radius: 12px; border-top-left-radius: 3px; padding: 7px 11px; font-size: 14px; overflow-wrap: anywhere }
+.bub.say .ttl { font-weight: 700 } .more.on { color: var(--muted); font-size: 13.5px; margin-top: 2px }
 .empty { color: var(--muted); font-size: 14px; margin: 0 }
 .foot { color: var(--muted); font-size: 13.5px; max-width: 80ch; border-top: 1px solid var(--rule); padding-top: 14px; margin: 0 }
 #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12.5px; padding: 4px 8px; border-radius: 6px; z-index: 5; max-width: 260px }
@@ -130,20 +140,53 @@ function dotsOf(run) {
   const keys = run.keys.map((k, i) => ({t: k.t, y: k.y, key: true, end: k.end, n: i + 1, what: k.what, w0: k.end ? 29 : k.t - 0.75, w1: k.end ? 99 : k.t + 0.75}));
   const dots = [];
   for (let m = 1; m <= 29; m++) if (!keys.some(k => Math.abs(k.t - m) < 0.7)) dots.push({t: m, y: yAt(run.curve, m), w0: m - 0.5, w1: m + 0.5});
-  return dots.concat(keys).sort((a, b) => a.t - b.t);
+  return [{t: 0, y: 0, key: true, start: true, n: 0, w0: 0, w1: 1.2}].concat(dots, keys).sort((a, b) => a.t - b.t);
 }
 const tip = document.getElementById("tip");
 function showTip(ev, text) { tip.textContent = text; tip.hidden = false; const x = Math.min(ev.clientX + 12, window.innerWidth - 270); tip.style.left = Math.max(8, x) + "px"; tip.style.top = (ev.clientY + 14) + "px"; }
 
+const SPLIT_AT = {"git-trim": 0.32, "dep-tree": 0.45};
+function person(color) {
+  const x = sv("svg", {viewBox: "0 0 20 20", width: 18, height: 18, class: "pi", "aria-hidden": "true"});
+  x.append(sv("circle", {cx: 10, cy: 6, r: 4, fill: color})); x.append(sv("path", {d: "M2.5 19c0-4.6 3.2-7.5 7.5-7.5s7.5 2.9 7.5 7.5z", fill: color}));
+  return x;
+}
+function nice(text, Lb) { let t = text; for (const id in Lb) t = t.replace(new RegExp(id, "gi"), Lb[id]); return t; }
+function renderStart(det, c, st, run, Lb) {
+  det.append(el("h3", {text: "How the work is divided"}));
+  const body = el("div", {class: "chat"}); det.append(body);
+  if (st === "divisional") {
+    const lead = run.agents.find(a => a.leader), t0 = SPLIT_AT[c.task];
+    body.append(el("p", {class: "what divisional", text: `Minute ${t0.toFixed(1)}. The leader cuts the task into three parts and gives one part to each group. These are the leader’s own messages.`}));
+    const top = el("div", {class: "pr lead"}); top.append(person("var(--ink)"), el("b", {text: "Leader"})); body.append(top);
+    const tree = el("div", {class: "tree"}); body.append(tree);
+    for (const g of ["group_0", "group_1", "group_2"]) {
+      const p = run.posts.find(x => x.a === lead.id && x.ch === g && x.t === t0); if (!p) continue;
+      const mem = run.agents.filter(a => a.group === g && !a.leader);
+      const node = el("div", {class: "node"});
+      const hd = el("div", {class: "pr"}); mem.forEach(() => hd.append(person("var(--div)"))); hd.append(el("b", {text: "Group " + (Number(g.split("_")[1]) + 1)}), el("span", {text: mem.map(a => Lb[a.id]).join(", ")})); node.append(hd);
+      const bub = el("div", {class: "bub say"}); bub.append(el("div", {class: "ttl", text: nice(p.title, Lb)}), el("div", {class: "more on", text: nice(p.text, Lb)})); node.append(bub);
+      tree.append(node);
+    }
+  } else {
+    const first = {}; run.posts.forEach(p => { if (!(p.a in first)) first[p.a] = p; });
+    const who = {}; run.edits.forEach(e => { (who[e.f] = who[e.f] || new Set()).add(e.a); });
+    const top = Object.keys(who).sort((a, b) => who[b].size - who[a].size)[0];
+    const last = Math.max(...run.agents.map(a => first[a.id] ? first[a.id].t : 0));
+    body.append(el("p", {class: "what flat", text: `Nobody divides the work. In the first ${Math.ceil(last * 60)} seconds every agent announces its own plan. These are their first messages.`}));
+    for (const a of run.agents) { const p = first[a.id]; if (!p) continue;
+      const row = el("div", {class: "pr say"}); row.append(person("var(--flat)"), el("b", {text: Lb[a.id]}), el("div", {class: "bub", text: nice(p.title || p.text, Lb)})); body.append(row); }
+    if (top) body.append(el("p", {class: "what flat", text: `Then ${who[top].size} of the 10 agents edit the same file, ${top}.`}));
+  }
+}
 function buildCase(c, ci) {
   const W = 680, H = 430, L = 44, R = 78, T = 16, B = 38;
   const X = t => L + (W - L - R) * Math.min(t, 30) / 30, Y = v => T + (H - T - B) * (1 - v / 0.9);
-  const state = {st: c.winner, i: 0};
+  const state = {st: "divisional", i: 0};
   const dots = {flat: dotsOf(c.runs.flat), divisional: dotsOf(c.runs.divisional)};
   const label = {};
   for (const st of ["flat", "divisional"]) { label[st] = {}; let n = 0; for (const a of c.runs[st].agents) label[st][a.id] = a.leader ? "Leader" : "Agent " + (++n); }
   const loser = c.winner === "flat" ? "divisional" : "flat";
-  state.i = dots[c.winner].findIndex(d => d.key && d.n === 3);
   const gap = Math.round((c.runs[c.winner].final - c.runs[loser].final) * 1000) / 10;
   const wrap = el("details", {class: "cd", id: "case-" + c.task});
   const sum = el("summary");
@@ -157,6 +200,7 @@ function buildCase(c, ci) {
   const lg = el("div", {class: "legend"});
   for (const st of ["flat", "divisional"]) { const s = el("span"); const i = el("i"); i.style.background = CSSV[st]; s.append(i, NAME[st]); lg.append(s); }
   const ks = el("span"); ks.append(el("i", {class: "k"}), "key moment"); lg.append(ks);
+  const s0 = el("span"); const i0 = el("i", {class: "k"}); i0.style.cssText = "background:var(--ink);box-shadow:0 0 0 1.5px var(--ink)"; s0.append(i0, "start: how the work is divided"); lg.append(s0);
   const ss = el("span"); const si = el("i"); si.style.cssText = "width:7px;height:7px;background:var(--muted)"; ss.append(si, "one minute of work"); lg.append(ss);
   box.append(lg);
   const svg = sv("svg", {viewBox: `0 0 ${W} ${H}`, role: "group", "aria-label": c.task + " pass rate over time"});
@@ -173,9 +217,19 @@ function buildCase(c, ci) {
     svg.append(sv("text", {x: W - R + 12, y: ey - 1, class: "lab"}, NAME[st]));
     svg.append(sv("text", {x: W - R + 12, y: ey + 14, class: "lab"}, (run.final * 100).toFixed(1) + "%"));
   }
+  let startEl = null;
   for (const st of [loser, c.winner]) dots[st].forEach((d, i) => {
-    const g = sv("g", {class: "dot", tabindex: 0, role: "button", "aria-label": `${NAME[st]}, minute ${fmtT(d.t)}${d.key ? ", key moment" : ""}`});
+    if (d.start && st === loser) { dotEls[st].push(null); return; }
+    const g = sv("g", {class: "dot", tabindex: 0, role: "button", "aria-label": d.start ? "Start: how the work is divided" : `${NAME[st]}, minute ${fmtT(d.t)}${d.key ? ", key moment" : ""}`});
     const cx = X(d.t), cy = Y(d.y);
+    if (d.start) {
+      g.append(sv("circle", {cx, cy, r: 13, fill: "transparent"})); g.append(sv("circle", {class: "ring", cx, cy, r: 11.5, fill: "var(--panel)", stroke: "var(--ink)", "stroke-width": 1.5})); g.append(sv("circle", {class: "core", cx, cy, r: 8.5, fill: "var(--ink)"}));
+      const tx = sv("text", {x: cx, y: cy + 4, "text-anchor": "middle"}, "S"); tx.setAttribute("style", "fill:var(--bg);font-weight:700;font-size:11.5px;pointer-events:none"); g.append(tx);
+      const pk = () => { state.i = 0; render(); };
+      g.addEventListener("click", pk); g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pk(); } });
+      g.addEventListener("mousemove", e => showTip(e, "Start: how the work is divided")); g.addEventListener("mouseleave", () => { tip.hidden = true; });
+      startEl = g; dotEls[st].push(null); return;
+    }
     g.append(sv("circle", {cx, cy, r: 11, fill: "transparent"}));
     if (d.key) { g.append(sv("circle", {class: "ring", cx, cy, r: 10.5, fill: "var(--panel)", stroke: CSSV[st], "stroke-width": 1.5})); g.append(sv("circle", {class: "core", cx, cy, r: 7.5, fill: CSSV[st]}));
       const tx = sv("text", {x: cx, y: cy + 4, "text-anchor": "middle"}, d.end ? "✓" : d.n); tx.setAttribute("style", "fill:var(--bg);font-weight:700;font-size:11px;pointer-events:none"); g.append(tx); }
@@ -187,11 +241,13 @@ function buildCase(c, ci) {
     g.addEventListener("mouseleave", () => { tip.hidden = true; });
     svg.append(g); dotEls[st].push(g);
   });
+  svg.append(startEl);
   box.append(svg);
   const det = el("div", {class: "detail", "aria-live": "polite"}); grid.append(det);
 
   function render() {
-    for (const st in dotEls) dotEls[st].forEach((g, i) => g.classList.toggle("sel", st === state.st && i === state.i));
+    for (const st in dotEls) dotEls[st].forEach((g, i) => { if (g) g.classList.toggle("sel", st === state.st && i === state.i); });
+    startEl.classList.toggle("sel", state.i === 0);
     const run = c.runs[state.st], d = dots[state.st][state.i];
     const inw = e => e.t >= d.w0 && e.t < d.w1;
     det.replaceChildren();
@@ -205,9 +261,10 @@ function buildCase(c, ci) {
     const prev = el("button", {id: `prev-${ci}`, "aria-label": "Earlier", text: "‹"}), next = el("button", {id: `next-${ci}`, "aria-label": "Later", text: "›"});
     prev.addEventListener("click", () => { state.i = Math.max(0, state.i - 1); render(); });
     next.addEventListener("click", () => { state.i = Math.min(dots[state.st].length - 1, state.i + 1); render(); });
-    step.append(prev, el("b", {text: d.end ? "min 29 to end" : `min ${fmtT(Math.max(0, d.w0))} to ${fmtT(d.w1)}`}), next);
+    step.append(prev, el("b", {text: d.start ? "start" : d.end ? "min 29 to end" : `min ${fmtT(Math.max(0, d.w0))} to ${fmtT(d.w1)}`}), next);
     det.append(el("div", {class: "dhead"}, tabs, step));
-    det.append(el("p", {class: "when", text: `${c.task} · ${NAME[state.st]} · pass rate of main ${pct(d.y)}`}));
+    if (!d.start) det.append(el("p", {class: "when", text: `${c.task} · ${NAME[state.st]} · pass rate of main ${pct(d.y)}`}));
+    if (d.start) { renderStart(det, c, state.st, run, label[state.st]); return; }
     if (d.key) det.append(el("p", {class: "what " + state.st, text: (d.end ? "" : "Key moment " + d.n + ". ") + d.what}));
     const multi = new Set(run.agents.map(a => a.group)).size > 1;
     const L = label[state.st], grp = {}; run.agents.forEach(a => { grp[a.id] = Number(a.group.split("_")[1]) + 1; });
